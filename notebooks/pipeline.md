@@ -188,9 +188,9 @@ library(ggpubr)
 library(Biostrings)
 library(plotly)
 
-### plots for checking number of retained reads
+### PLOT 1 - for checking number of retained reads
 
-# read all files and put them in a dataframe
+# read data
 cc=0
 dat_list <- list()
 for (fil in list.files(pattern = "denoising-stats_.*tsv")) {
@@ -218,7 +218,7 @@ ToPlot<-c("percentage.of.input.passed.filter",
           "percentage.of.input.merged",
           "percentage.of.input.non.chimeric")
 
-# PLOT 
+# make the plot
 plts<-list()
 for (i in 1:length(ToPlot)) {
   dd<-df[df$metric==ToPlot[i],]
@@ -232,8 +232,97 @@ ggarrange(plotlist = plts, ncol=3)
 #ggsave("Figure_xx.png", device="png", 
 #       width = 29.7*1.5, height = 21, units = "cm", bg="white")
 
+### PLOT 2 - for checking amplicon length
+
+# read data
+SeqsLengthTotalData<-list()
+SeqsLengthPerSample<-list()
+for (fil in list.files(pattern="^table_[0-9_]+\\.tsv$")) {
+  id <- sub("^table_(.*)\\.tsv$", "\\1", fil)
+  
+  # read table
+  counts <- read.delim(fil, skip = 1, check.names = FALSE) 
+  rownames(counts) <- counts$"#OTU ID"
+  counts <- counts[ , -1, drop = FALSE]
+  
+  # read sequences
+  seqs <- readDNAStringSet(paste0("rep-seqs_",id,".fasta"))
+  seq_lengths <- width(seqs)
+  names(seq_lengths) <- names(seqs)
+  
+  # match only shared features (just for safety)
+  shared_features <- intersect(rownames(counts), names(seq_lengths))
+  counts <- counts[shared_features, , drop = FALSE]
+  seq_lengths <- seq_lengths[shared_features]
+  
+  # save length of each seqs in total data
+  seq_lengths2<-as.data.frame(seq_lengths)
+  seq_lengths2$ASV<-row.names(seq_lengths2)
+  SeqsLengthTotalData[[id]]<-seq_lengths2
+  
+  # compute average length per sample
+  average_lengths <- sapply(counts, function(sample_counts) {
+    total_reads <- sum(sample_counts)
+    if (total_reads == 0) return(NA)
+    sum(sample_counts * seq_lengths) / total_reads
+  })
+  
+  # save average length per sample
+  SeqsLengthPerSample[[id]]<-as.data.frame(average_lengths)
+  SeqsLengthPerSample[[id]]$SampleID<-row.names(SeqsLengthPerSample[[id]])
+  
+}
+
+# make the plot - static version
+PLOTS_length<-list()
+for (i in 1:length(SeqsLengthTotalData)) {
+  df<-SeqsLengthTotalData[[i]]
+  PLOTS_length[[i]] <- ggplot(df, aes(x = seq_lengths)) +
+    geom_density(fill = "skyblue", alpha = 0.5) +
+    labs(title = names(SeqsLengthTotalData)[i],
+         x = "Sequence Length",
+         y = "Density") +
+    theme_pubr()
+}
+
+ggarrange(plotlist = PLOTS_length, nrow = 3, ncol = 3)
+#ggsave("Figure_xx.png", device="png", 
+#       width = 29.7*1.5, height = 21, units = "cm", bg="white")
+
+# make the plot - interactive version
+long_df <- bind_rows(
+  lapply(names(SeqsLengthTotalData), function(name) {
+    df <- SeqsLengthTotalData[[name]]
+    df$method <- name
+    return(df)
+  })
+)
+
+p<-ggplot(long_df, aes(x = seq_lengths, color = method)) +
+  geom_density(size = 1) +
+  theme_minimal() +
+  labs(
+    x = "Sequence Length",
+    y = "Density",
+    color = "Denoising Method",
+    title = "Sequence Length Distribution by Denoising Method"
+  )
+
+ggplotly(p)
+
+
 
 ```
+
+Here some examples of the files produced:
+- [denoising stats](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/denoising-stats.qzv)
+- [base transition stats](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/base-transition-stats.qzv)
+- [PLOT1]()
+- [PLOT2 - static version]()
+- [PLOT2 - interactive version]()
+
+
+
 
   # 
   qiime feature-table summarize \
@@ -242,14 +331,6 @@ ggarrange(plotlist = plts, ncol=3)
   qiime feature-table tabulate-seqs \
     --i-data rep-seqs_${TLF}_${TLR}.qza \
     --o-visualization rep-seqs_${TLF}_${TLR}.qzv
-
-
-
-Let's have a look at [denoising-stats.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/denoising-stats.qzv) and [base-transition-stats.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/base-transition-stats.qzv).
-
-
-
-
 
 
 
