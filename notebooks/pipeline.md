@@ -116,51 +116,135 @@ We are now ready for removing non-biological variation from our data. We use the
 - `--p-max-ee-f` and `--p-max-ee-r`, reads with number of expected errors higher than this value will be discarded
 - `--p-trunc-q`, reads are truncated at the first instance of a quality score less than or equal to this value
 - `--p-n-reads-learn`, number of reads used for training the error model, 1M is usually enough, but it may be increased for big datasets
-```bash
-qiime dada2 denoise-paired \
-  --i-demultiplexed-seqs seqs_trimmed.qza \
-  --p-trim-left-f <length_of_forward_primer> \
-  --p-trim-left-r 18 \
-  --p-trunc-len-f 220 \
-  --p-trunc-len-r 200 \
-  --p-max-ee-f 2 \
-  --p-max-ee-r 2 \
-  --p-trunc-q 2 \
-  --p-n-reads-learn 1000000 \
-  --p-pooling-method 'pseudo' \
-  --p-n-threads $JOBS \
-  --o-table table.qza \
-  --o-representative-sequences rep-seqs_MixedOrientation.qza \
-  --o-denoising-stats denoising-stats.qza \
-  --o-base-transition-stats base-transition-stats.qza \
-  --verbose
-
-# visualize denoising stats
-qiime metadata tabulate \
-  --m-input-file denoising-stats.qza \
-  --o-visualization denoising-stats.qzv
-
-# visualize base transition stats
-qiime dada2 plot-base-transitions \
-  --i-base-transition-stats base-transition-stats.qza \
-  --o-visualization base-transition-stats.qzv
-```
 
 > [!IMPORTANT]
-> You should experiment with the values of `--p-trunc-len-f` and `--p-trunc-len-r` parameters and compare the results (in terms of number of retained sequences per sample and sequences length) to choose the best values.
+> The default values of the dada2 parameters are usually good for most applications, but you should experiment with the values of `--p-trunc-len-f` and `--p-trunc-len-r` and compare the results (in terms of model fitting, number of retained sequences per sample and sequences length) to choose the best values. Here an example of how to do it.
 
-Now let's create visualizations for the two stats files produced by the DADA2 algorithm.
 ```bash
-# visualize denoising stats
-qiime metadata tabulate \
-  --m-input-file denoising-stats.qza \
-  --o-visualization denoising-stats.qzv
+# truncation values for forward and reverse reads to be tested
+TruncLenF=(250 250 240 240 230 230 220)
+TruncLenR=(250 240 240 230 230 220 220)
 
-# visualize base transition stats
-qiime dada2 plot-base-transitions \
-  --i-base-transition-stats base-transition-stats.qza \
-  --o-visualization base-transition-stats.qzv
+for i in "${!TruncLenF[@]}"
+do
+
+  TLF=${TruncLenF[i]}
+  TLR=${TruncLenR[i]}
+    
+  qiime dada2 denoise-paired \
+    --i-demultiplexed-seqs approccio_GREZZO/${DIR}/seqs.qza \
+    --p-trim-left-f $FW_LEN \
+    --p-trim-left-r $RV_LEN \
+    --p-trunc-len-f $TLF \
+    --p-trunc-len-r $TLR \
+    --p-max-ee-f 2 \
+    --p-max-ee-r 2 \
+    --p-trunc-q 2 \
+    --p-n-reads-learn 1000000 \
+    --p-pooling-method 'pseudo' \
+    --p-n-threads $JOBS \
+    --o-table table_${TLF}_${TLR}.qza \
+    --o-representative-sequences rep-seqs_${TLF}_${TLR}.qza \
+    --o-denoising-stats denoising-stats_${TLF}_${TLR}.qza \
+    --o-base-transition-stats base-transition-stats_${TLF}_${TLR}.qza \
+    --verbose
+
+  # visualize denoising stats
+  qiime metadata tabulate \
+    --m-input-file denoising-stats_${TLF}_${TLR}.qza \
+    --o-visualization denoising-stats_${TLF}_${TLR}.qzv
+
+  # visualize base transition stats
+  qiime dada2 plot-base-transitions \
+    --i-base-transition-stats base-transition-stats_${TLF}_${TLR}.qza \
+    --o-visualization base-transition-stats_${TLF}_${TLR}.qzv
+
+  # Export files for checking them in R
+  tmpdir="tmp_${TLF}_${TLR}"
+  mkdir -p "$tmpdir"
+  
+  qiime tools export --input-path "denoising-stats_${TLF}_${TLR}.qza" --output-path "$tmpdir/exported_stats"
+  cp "${tmpdir}/exported_stats/stats.tsv" "denoising-stats_${TLF}_${TLR}.tsv"
+
+  qiime tools export --input-path "table_${TLF}_${TLR}.qza" --output-path "$tmpdir/exported_table"
+  biom convert -i "$tmpdir/exported_table/feature-table.biom" -o "table_${TLF}_${TLR}.tsv" --to-tsv
+
+  qiime tools export --input-path "rep-seqs_${TLF}_${TLR}.qza" --output-path "$tmpdir/exported_seqs"
+  cp "${tmpdir}/exported_seqs/dna-sequences.fasta" "rep-seqs_${TLF}_${TLR}.fasta"
+
+  rm -r "$tmpdir"
+
+done
+
 ```
+
+In R you can use this code for checking the dada2 output.
+
+```bash
+### needed libraries (you'll need to install them the first time using 'install.packages(<"package_name">)')
+library(tidyr)
+library(dplyr)
+library(ggpubr)
+library(Biostrings)
+library(plotly)
+
+### plots for checking number of retained reads
+
+# read all files and put them in a dataframe
+cc=0
+dat_list <- list()
+for (fil in list.files(pattern = "denoising-stats_.*tsv")) {
+  cc=cc+1
+  xx<-read.csv(fil, sep="\t")
+  xx<-xx[-1,]
+  xx_long <- xx %>% 
+    pivot_longer(
+      cols      = -sample.id,
+      names_to  = "metric",
+      values_to = "value"
+    )
+  dat_list[[cc]]<-as.data.frame(xx_long)
+}
+names(dat_list) <- sub("^[^_]+_([^\\.]+)\\.tsv$", "\\1",
+                       list.files(pattern = "denoising-stats_.*tsv"))
+
+df <- bind_rows(dat_list, .id = "source_df")
+df$value<-as.numeric(df$value)
+
+# define comparisons anc columns of interest
+my_comparisons<-combn(unique(df$source_df), 2, simplify = FALSE)
+
+ToPlot<-c("percentage.of.input.passed.filter",
+          "percentage.of.input.merged",
+          "percentage.of.input.non.chimeric")
+
+# PLOT 
+plts<-list()
+for (i in 1:length(ToPlot)) {
+  dd<-df[df$metric==ToPlot[i],]
+  plts[[i]]<-ggboxplot(dd, x = "source_df", y = "value",
+                        add = "jitter",
+                        title = ToPlot[i]) + xlab("") + ylab("") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+ggarrange(plotlist = plts, ncol=3)
+#ggsave("Figure_xx.png", device="png", 
+#       width = 29.7*1.5, height = 21, units = "cm", bg="white")
+
+
+```
+
+  # 
+  qiime feature-table summarize \
+    --i-table table_${TLF}_${TLR}.qza \
+    --o-visualization table_${TLF}_${TLR}.qzv
+  qiime feature-table tabulate-seqs \
+    --i-data rep-seqs_${TLF}_${TLR}.qza \
+    --o-visualization rep-seqs_${TLF}_${TLR}.qzv
+
+
+
 Let's have a look at [denoising-stats.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/denoising-stats.qzv) and [base-transition-stats.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/base-transition-stats.qzv).
 
 
