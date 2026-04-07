@@ -310,17 +310,14 @@ p<-ggplot(long_df, aes(x = seq_lengths, color = method)) +
 
 ggplotly(p)
 
-
-
 ```
 
 Here some examples of the files produced:
 - [denoising stats](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/denoising-stats.qzv)
 - [base transition stats](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/base-transition-stats.qzv)
-- [PLOT1]()
-- [PLOT2 - static version]()
-- [PLOT2 - interactive version]()
-
+- [PLOT1](https://leafbeetle.github.io/meta_pipeline/examples/PLOT1.png)
+- [PLOT2 - static version](https://leafbeetle.github.io/meta_pipeline/examples/PLOT2.png)
+- [PLOT2 - interactive version](https://leafbeetle.github.io/meta_pipeline/examples/PLOT2_interactive.html)
 
 
 
