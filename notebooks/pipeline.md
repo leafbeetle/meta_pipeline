@@ -320,117 +320,14 @@ Here some examples of the files produced:
 - [PLOT2 - interactive version](https://leafbeetle.github.io/meta_pipeline/examples/PLOT2_interactive.html)
 
 
-
-  # 
-  qiime feature-table summarize \
-    --i-table table_${TLF}_${TLR}.qza \
-    --o-visualization table_${TLF}_${TLR}.qzv
-  qiime feature-table tabulate-seqs \
-    --i-data rep-seqs_${TLF}_${TLR}.qza \
-    --o-visualization rep-seqs_${TLF}_${TLR}.qzv
-
-
-
-
-
-
-
-
-
-
-################################################################################################################################################à
-
-#### 2.3.4. Extract the amplified region from the reference database
-
-To optimize taxonomic classification and reduce database complexity we can **trim the reference sequences**
-to contain only the region actually amplified by the primers used in this study.
+After selecting the best dada2 results chenge their name for simplicity.
 ```bash
-qiime feature-classifier extract-reads \
-  --i-sequences silva-138.1-ssu-nr99-seqs-derep-uniq.qza \
-  --p-f-primer ASCYGYGGTAAYWCCAGC \
-  --p-r-primer TCHNHGNATTTCACCNCT \
-  --p-identity 0.8 \
-  --p-min-length 200 \
-  --p-max-length 550 \
-  --p-n-jobs $JOBS \
-  --p-read-orientation forward \
-  --o-reads silva-138.1-ssu-nr99-seqs_Euk575-895.qza
-```
+TLF=<selcted_TLF>
+TLR=<selected_TLR>
 
-**Dereplicate** again (since some of these shorter sequences may be identical now) to remove redundance.
-```bash
-qiime rescript dereplicate \
-  --i-sequences silva-138.1-ssu-nr99-seqs_Euk575-895.qza \
-  --i-taxa silva-138.1-ssu-nr99-tax-derep-uniq.qza \
-  --p-mode 'uniq' \
-  --o-dereplicated-sequences silva-138.1-ssu-nr99-seqs_Euk575-895_derep-uniq.qza \
-  --o-dereplicated-taxa silva-138.1-ssu-nr99-tax_Euk575-895_derep-uniq.qza \
-  --p-threads $JOBS
-```
+cp rep-seqs_${TLF}_${TLR}.qza rep_seqs.qza
+cp table_${TLF}_${TLR}.qza table.qza 
 
-
-
-### 2.5. Denoising and sequence re-orientation
-
-We are now ready for removing non-biological variation from our data. We use the [DADA2 algorithm](https://benjjneb.github.io/dada2/) implemented in [q2-dada2](https://github.com/qiime2/q2-dada2) that models and corrects sequencing errors to infer exact biological sequences (amplicon sequence variants, ASVs). The most important parameters are:
-- `--p-trim-left-f` and `--p-trim-left-r`, corresponding to the length of the forward and reverse primer respectively
-- `--p-trunc-len-f` and `--p-trunc-len-r`, corresponding to the length at which to trunc the sequences due to quality drop
-- `--p-max-ee-f` and `--p-max-ee-r`, reads with number of expected errors higher than this value will be discarded
-- `--p-trunc-q`, reads are truncated at the first instance of a quality score less than or equal to this value
-- `--p-n-reads-learn`, number of reads used for training the error model, 1M is usually enough, but it may be increased for big datasets
-```bash
-qiime dada2 denoise-paired \
-  --i-demultiplexed-seqs seqs_trimmed.qza \
-  --p-trim-left-f 18 \
-  --p-trim-left-r 18 \
-  --p-trunc-len-f 220 \
-  --p-trunc-len-r 200 \
-  --p-max-ee-f 2 \
-  --p-max-ee-r 2 \
-  --p-trunc-q 2 \
-  --p-n-reads-learn 1000000 \
-  --p-pooling-method 'pseudo' \
-  --p-n-threads $JOBS \
-  --o-table table_MixedOrientation.qza \
-  --o-representative-sequences rep-seqs_MixedOrientation.qza \
-  --o-denoising-stats denoising-stats.qza \
-  --o-base-transition-stats base-transition-stats.qza \
-  --verbose
-```
-
-> [!IMPORTANT]
-> In real life scenarios you should experiment with `--p-trunc-len-f` and `--p-trunc-len-r` parameters and compare the results (in terms of number of retained sequences per sample and sequences length) to choose the best values.
-
-Now let's create visualizations for the two stats files produced by the DADA2 algorithm.
-```bash
-# visualize denoising stats
-qiime metadata tabulate \
-  --m-input-file denoising-stats.qza \
-  --o-visualization denoising-stats.qzv
-
-# visualize base transition stats
-qiime dada2 plot-base-transitions \
-  --i-base-transition-stats base-transition-stats.qza \
-  --o-visualization base-transition-stats.qzv
-```
-Let's have a look at [denoising-stats.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/denoising-stats.qzv) and [base-transition-stats.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/base-transition-stats.qzv).
-
-Since in this study barcodes and adapters were added after PCR amplification each fastq file contained both forward and reverse reads. So sequences needs to be re-orientered using the reference database as guide. We can use the `qiime rescript orient-seqs` command from the [q2-RESCRIPt](https://github.com/bokulich-lab/RESCRIPt) plugin for doing it.
-```bash
-qiime rescript orient-seqs \
-  --i-sequences rep-seqs_MixedOrientation.qza \
-  --i-reference-sequences silva-138.1-ssu-nr99-seqs_Euk575-895_derep-uniq.qza \
-  --o-oriented-seqs rep-seqs.qza \
-  --o-unmatched-seqs orientation_unmatched_sequences.qza
-```
-
-Now we can exclude unmatched sequences from the ASV table.
-```bash
-qiime feature-table filter-features \
-  --i-table table_MixedOrientation.qza \
-  --m-metadata-file orientation_unmatched_sequences.qza \
-  --p-exclude-ids \
-  --o-filtered-table table.qza
 ```
 
 Create visualizations for the ASV table and ASV sequences files.
@@ -448,27 +345,51 @@ qiime feature-table tabulate-seqs \
   --i-data rep-seqs.qza \
   --o-visualization rep-seqs.qzv
 ```
-Let's have a look at [table.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/table.qzv) and [rep-seqs.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/rep-seqs.qzv).
+Here examples of these visualizations:
+- [table](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/table.qzv)
+- [sequences](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/rep-seqs.qzv).
 
 
-### 2.6. Taxonomic classification
-Now we are ready for the taxonomic classification. There are different methods in the [q2-feature-classfifier](https://github.com/qiime2/q2-feature-classifier?tab=readme-ov-file) plugin for this, this time we will use a machine learning approach with a naive bayes classifier. First of all let's train a classifier on the SILVA reference database that we built before.
+## Taxonomic classification
+You can download the silva database for the bacterial 16S [here](https://drive.google.com/drive/folders/1eNXLXgK7321b_EBJExokK6vjuLgrRAf2?usp=sharing)
+
+To optimize taxonomic classification and reduce database complexity we can trim the reference sequences to contain only the region actually amplified by the primers used in this study.
+```bash
+qiime feature-classifier extract-reads \
+  --i-sequences silva-138-99-seqs.qza \
+  --p-f-primer <sequence_of_forward_primer> \
+  --p-r-primer <sequence_of_reverse_primer> \
+  --p-identity 0.8 \
+  --p-min-length 200 \
+  --p-max-length 550 \
+  --p-n-jobs $JOBS \
+  --p-read-orientation forward \
+  --o-reads silva-138-99-seqs_<primer_pair_name>.qza
+
+qiime rescript dereplicate \
+  --i-sequences silva-138-99-seqs_<primer_pair_name>.qza \
+  --i-taxa silva-138-99-tax.qza \
+  --p-mode 'uniq' \
+  --o-dereplicated-sequences silva-138-99-seqs_<primer_pair_name>_derep.qza \
+  --o-dereplicated-taxa silva-138-99-tax_<primer_pair_name>_derep.qza \
+  --p-threads $JOBS
+```
+
+Now we are ready for the taxonomic classification. First of all train a classifier on the SILVA reference database that we built before.
 ```bash
 qiime feature-classifier fit-classifier-naive-bayes \
-  --i-reference-reads silva-138.1-ssu-nr99-seqs_Euk575-895_derep-uniq.qza \
-  --i-reference-taxonomy silva-138.1-ssu-nr99-tax_Euk575-895_derep-uniq.qza \
+  --i-reference-reads silva-138-99-seqs_<primer_pair_name>_derep.qza \
+  --i-reference-taxonomy silva-138-99-tax_<primer_pair_name>_derep.qza \
   --p-verbose \
   --o-classifier NBclassifier.qza
 ```
-> [!TIP]
-> In real case scenarios, to improve taxonomic classification accuracy you may want to use also the `--i-class-weight` parameter to incorporate environment-specific taxonomic abundance information that can be generated by the [q2-clawback](https://github.com/BenKaehler/q2-clawback) plugin.
 
-Now we can use the trained classifier to assign a taxonomic label to each ASV. The `--p-confidence` parameter is used for setting a confidence threshold for limiting taxonomic depth, in this case we set it to 90% that is usually a good value for metazoan.
+Now we can use the trained classifier to assign a taxonomic label to each ASV. The `--p-confidence` parameter is used for setting a confidence threshold for limiting taxonomic depth, in this case we set it to 70% that is usually a good value for bacterial 16S.
 ```bash
 qiime feature-classifier classify-sklearn \
   --i-classifier NBclassifier.qza \
   --i-reads rep-seqs.qza \
-  --p-confidence 0.90 \
+  --p-confidence 0.70 \
   --p-n-jobs $JOBS \
   --o-classification taxonomy.qza
 ```
@@ -481,37 +402,7 @@ qiime taxa barplot \
   --m-metadata-file metadata.tsv \
   --o-visualization barplot.qzv
 ```
-Let's have a look at [barplot.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/barplot.qzv).
-
-
-### 2.7. Final filtering
-
-As you can see in the barplot there are several non-invertebrate taxa, this is due to the use of primers that are not specific for invertebrates. Now let's filter the table to keep only the invertebrate taxa of our interest: nematodes, arthropods, tardigrads, annelids, rotifers, and flatworms. We can specify the taxa we want to keep using the `--p-include` parameter.
-```bash
-qiime taxa filter-table \
-  --i-table table.qza \
-  --i-taxonomy taxonomy.qza \
-  --p-include Nematozoa,Arthropoda,Tardigrada,Annelida,Rotifera,Platyhelminthes \
-  --o-filtered-table invertebrates_table.qza
-```
-
-To reduce the noise we remove all the ASVs with less than 10 observations.
-```bash
-qiime feature-table filter-features \
-  --i-table invertebrates_table.qza \
-  --p-min-frequency 10 \
-  --o-filtered-table invertebrates_table_clean.qza
-```
-
-Then generate a new barplot.
-```bash
-qiime taxa barplot \
-  --i-table invertebrates_table_clean.qza \
-  --i-taxonomy taxonomy.qza \
-  --m-metadata-file metadata.tsv \
-  --o-visualization invertebrates_barplot.qzv
-```
-Let's have a look at [invertebrates_barplot.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/invertebrates_barplot.qzv).
+[Here](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/barplot.qzv) an example of a barplot visualization.
 
 
 
