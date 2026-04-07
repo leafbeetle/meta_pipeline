@@ -5,6 +5,8 @@ Install required softwares
 - [QIIME2 amplicon version 2026.1](https://library.qiime2.org/quickstart/amplicon)
 - [FastQC](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)
 - [MultiQC](https://seqera.io/multiqc/)
+- [R](https://cran.rstudio.com/)
+- [R studio](https://posit.co/download/rstudio-desktop/) (not mandatory but suggested)
 
 
 ## Preliminary settings
@@ -347,7 +349,7 @@ qiime feature-table tabulate-seqs \
 ```
 Here examples of these visualizations:
 - [table](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/table.qzv)
-- [sequences](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/rep-seqs.qzv).
+- [sequences](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/rep-seqs.qzv)
 
 
 ## Taxonomic classification
