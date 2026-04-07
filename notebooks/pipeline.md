@@ -353,7 +353,7 @@ Here examples of these visualizations:
 
 
 ## Taxonomic classification
-You can download the silva database for the bacterial 16S [here](https://drive.google.com/drive/folders/1eNXLXgK7321b_EBJExokK6vjuLgrRAf2?usp=sharing)
+You can download the silva database for the bacterial 16S [here](https://drive.google.com/drive/folders/1eNXLXgK7321b_EBJExokK6vjuLgrRAf2?usp=sharing).
 
 To optimize taxonomic classification and reduce database complexity we can trim the reference sequences to contain only the region actually amplified by the primers used in this study.
 ```bash
