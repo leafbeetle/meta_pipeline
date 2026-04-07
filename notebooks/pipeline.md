@@ -14,6 +14,8 @@ We start defining some variables so that the pipeline can be applied to differen
 - `WORKDIR` for the working directory where we want to save the results of the analyses
 - `JOBS` for the maximum number of processes that can be run simultaneously (i.e. maximum number of available cores)
 - `ENV` for the name of the conda environment where we installed QIIME2
+- `FW_LEN` for the length of the forward primer
+- `RV_LEN` for the length of the reverse primer
 
 ```bash
 RAWDIR=<path/to/rawdata/dir>
@@ -23,6 +25,10 @@ WORKDIR=<path/to/outputs>
 JOBS=<number_of_cores>
 
 ENV=qiime2-amplicon-2026.1
+
+FW_LEN=<length_of_forward_primer>
+RV_LEN=<length_of_reverse_primer>
+
 ```
 
 
@@ -48,11 +54,11 @@ multiqc .
 ```
 
 **FastQC** produces one report for each fastq file, **MultiQC** combines those reports in a single one for all samples.
-Look at the multiqc report for checking sequence quality.
+Look at the multiqc report for checking sequence quality. Here an [example](https://MontagnaLab.github.io/InnovativeApproachesForInvertebrateBiodiversityMonitoring/data/multiqc_report.html).
 
 
 ## Import sequences in QIIME2
-Make a manifest file named `manifest.tsv` using the SampleID of the metadata file. 
+Make a manifest file named `manifest.tsv` using the SampleID of the metadata file and save it in the working directory `WORKDIR`. 
 It should be a TSV (tab separated values) file with three columns: sample ID, path to forward reads, path to reverse reads.
 Like these examples.
 
@@ -75,41 +81,102 @@ Import sequences using the manifest file.
 ```bash
 cd $WORKDIR
 
+# for paired-end reads
 qiime tools import \
   --type 'SampleData[PairedEndSequencesWithQuality]' \
   --input-format PairedEndFastqManifestPhred33V2 \
   --input-path manifest.tsv \
-  --output-path seqs.qza 
+  --output-path seqs.qza
+
+# for single-end reads
+qiime tools import \
+  --type 'SampleData[SequencesWithQuality]' \
+  --input-format SingleEndFastqManifestPhred33V2 \
+  --input-path manifest.tsv \
+  --output-path seqs.qza
 ```
 
-To see a summary of the imported sequences we can create a visualization (QZV) with `qiime demux summarize`.
+To see a summary of the imported sequences we can create a visualization.
 ```bash
 qiime demux summarize \
   --i-data seqs.qza \
   --o-visualization seqs.qzv
 ```
 > [!TIP]
-> QIIME2 QZV files can be visualized using the command `qiime tools view <filename.qzv>` or loading the files in the [online visualizer](https://view.qiime2.org/).
+> QIIME2 visualizations can be visualized using the command `qiime tools view <filename.qzv>` or loading the files in the [online visualizer](https://view.qiime2.org/).
 
-Let's have a look at [seqs.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/seqs.qzv).
+Look at this visualization for an overall report on sequence quality. Here an [example](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/seqs.qzv).
 
 
-If you remember the quality check reports there are still some Illumina adapter in the sequences, it is better to remove them using [q2-cutadapt](https://github.com/qiime2/q2-cutadapt). The command `qiime cutadapt trim-paired` has many parameters, in this case we just need `--p-adapter-f` and `--p-adapter-r` to specify the adapter sequence that we want to remove from the 3' end of forward and reverse reads, respectively.
+## Denoising
+
+We are now ready for removing non-biological variation from our data. We use the [DADA2 algorithm](https://benjjneb.github.io/dada2/) implemented in [q2-dada2](https://github.com/qiime2/q2-dada2) that models and corrects sequencing errors to infer exact biological sequences (amplicon sequence variants, ASVs). The most important parameters are:
+- `--p-trim-left-f` and `--p-trim-left-r`, corresponding to the length of the forward and reverse primer respectively
+- `--p-trunc-len-f` and `--p-trunc-len-r`, corresponding to the length at which to trunc the sequences due to quality drop
+- `--p-max-ee-f` and `--p-max-ee-r`, reads with number of expected errors higher than this value will be discarded
+- `--p-trunc-q`, reads are truncated at the first instance of a quality score less than or equal to this value
+- `--p-n-reads-learn`, number of reads used for training the error model, 1M is usually enough, but it may be increased for big datasets
 ```bash
-qiime cutadapt trim-paired \
-  --i-demultiplexed-sequences seqs.qza \
-  --p-cores $JOBS \
-  --p-adapter-f AGATCGGAAGAG \
-  --p-adapter-r AGATCGGAAGAG \
-  --o-trimmed-sequences seqs_trimmed.qza \
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs seqs_trimmed.qza \
+  --p-trim-left-f <length_of_forward_primer> \
+  --p-trim-left-r 18 \
+  --p-trunc-len-f 220 \
+  --p-trunc-len-r 200 \
+  --p-max-ee-f 2 \
+  --p-max-ee-r 2 \
+  --p-trunc-q 2 \
+  --p-n-reads-learn 1000000 \
+  --p-pooling-method 'pseudo' \
+  --p-n-threads $JOBS \
+  --o-table table.qza \
+  --o-representative-sequences rep-seqs_MixedOrientation.qza \
+  --o-denoising-stats denoising-stats.qza \
+  --o-base-transition-stats base-transition-stats.qza \
   --verbose
+
+# visualize denoising stats
+qiime metadata tabulate \
+  --m-input-file denoising-stats.qza \
+  --o-visualization denoising-stats.qzv
+
+# visualize base transition stats
+qiime dada2 plot-base-transitions \
+  --i-base-transition-stats base-transition-stats.qza \
+  --o-visualization base-transition-stats.qzv
 ```
 
+> [!IMPORTANT]
+> You should experiment with the values of `--p-trunc-len-f` and `--p-trunc-len-r` parameters and compare the results (in terms of number of retained sequences per sample and sequences length) to choose the best values.
+
+Now let's create visualizations for the two stats files produced by the DADA2 algorithm.
+```bash
+# visualize denoising stats
+qiime metadata tabulate \
+  --m-input-file denoising-stats.qza \
+  --o-visualization denoising-stats.qzv
+
+# visualize base transition stats
+qiime dada2 plot-base-transitions \
+  --i-base-transition-stats base-transition-stats.qza \
+  --o-visualization base-transition-stats.qzv
+```
+Let's have a look at [denoising-stats.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/denoising-stats.qzv) and [base-transition-stats.qzv](https://view.qiime2.org/visualization/?src=https://raw.githubusercontent.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/main/outputs/QIIME2_visualizations/base-transition-stats.qzv).
 
 
 
 
 
+
+
+
+
+
+
+
+
+
+################################################################################################################################################à
 
 #### 2.3.4. Extract the amplified region from the reference database
 
