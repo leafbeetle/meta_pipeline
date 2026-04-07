@@ -1,7 +1,11 @@
 # Bioinformatic pipeline
 
-## Install QIIME2
-Install version 2026.1 of QIIME2 amplicon following the instructions [here](https://library.qiime2.org/quickstart/amplicon).
+## Installation
+Install required softwares
+- [QIIME2 amplicon version 2026.1](https://library.qiime2.org/quickstart/amplicon)
+- [FastQC](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)
+- [MultiQC](https://seqera.io/multiqc/)
+
 
 ## Preliminary settings
 
@@ -9,25 +13,21 @@ We start defining some variables so that the pipeline can be applied to differen
 - `RAWDIR` for the directory containing raw sequences (i.e. the fastq files)
 - `WORKDIR` for the working directory where we want to save the results of the analyses
 - `JOBS` for the maximum number of processes that can be run simultaneously (i.e. maximum number of available cores)
-- 
+- `ENV` for the name of the conda environment where we installed QIIME2
+
 ```bash
 RAWDIR=<path/to/rawdata/dir>
 
 WORKDIR=<path/to/outputs>
 
 JOBS=<number_of_cores>
-```
 
-Finally we define a variable containing the name of the conda environment where we installed **QIIME2**.
-```bash
 ENV=qiime2-amplicon-2026.1
 ```
 
 
-### 2.2. Reads quality check
-First of all we check the quality of the raw data using the softwares **FastQC** and **MultiQC**. 
-If you installed these softwares you can run the commands, but since this can be a quite long step 
-it may be better to look directly at the final report [here](https://MontagnaLab.github.io/InnovativeApproachesForInvertebrateBiodiversityMonitoring/data/multiqc_report.html).
+## Reads quality check
+First of all check the quality of the raw data using the softwares **FastQC** and **MultiQC**. 
 
 ```bash
 # move to the directory where we want to save the outputs #
@@ -48,247 +48,33 @@ multiqc .
 ```
 
 **FastQC** produces one report for each fastq file, **MultiQC** combines those reports in a single one for all samples.
-Let's have a look at the reports.
+Look at the multiqc report for checking sequence quality.
 
-⚠️
-There are still a few illumina universal adapters in some reads, we will remove them later.
 
-### 2.3 Create reference database
-To taxonomically classify our sequences we need to construct a reference database.
-In this case we will use [SILVA v.138.1](https://www.arb-silva.de/), a quality checked and regularly updated 
-database of aligned small (16S/18S, SSU) and large subunit (23S/28S, LSU) ribosomal RNA (rRNA) sequences 
-for all three domains of life (Bacteria, Archaea and Eukarya). 
-This can be a very long step since the database is quite huge, so it may be better if you download the 
-already prepared [reference sequences](https://github.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/blob/main/data/silva-138.1-ssu-nr99-seqs_Euk575-895_derep-uniq.qza) and [taxonomy](https://github.com/MontagnaLab/InnovativeApproachesForInvertebrateBiodiversityMonitoring/blob/main/data/silva-138.1-ssu-nr99-tax_Euk575-895_derep-uniq.qza).
+## Import sequences in QIIME2
+Make a manifest file named `manifest.tsv` using the SampleID of the metadata file. 
+It should be a TSV (tab separated values) file with three columns: sample ID, path to forward reads, path to reverse reads.
+Like these examples.
 
-#### 2.3.1 Obtain and clean the reference sequences
-
-First of all we activate the conda environment containing **QIIME2**.
-
+- paired-end reads (e.g., Illumina)
 ```bash
-conda activate $ENV
+sample-id    forward-absolute-filepath    reverse-absolute-filepath
+S0055    <path/to>/SRR10896373_AF33_1.fastq.gz	<path/to>/SRR10896373_AF33_2.fastq.gz
+S0056    <path/to>/SRR10896374_AF32_1.fastq.gz	<path/to>/SRR10896374_AF32_2.fastq.gz
+...
 ```
 
-We will use the [q2-RESCRIPt](https://github.com/bokulich-lab/RESCRIPt) plugin that has several built-in functions
-for managing and curating reference sequence databases.
-
-**Download** the SILVA RNA sequences and the associated taxonomic labels.
+- single-end reads (e.g., IonTorrent)
 ```bash
-qiime rescript get-silva-data \
-  --p-version '138.1' \
-  --p-target 'SSURef_NR99' \
-  --p-include-species-labels \
-  --p-no-rank-propagation \
-  --parallel \
-  --o-silva-sequences silva-138.1-ssu-nr99-rna-seqs.qza \
-  --o-silva-taxonomy silva-138.1-ssu-nr99-tax.qza \
-  --verbose
+sample-id     absolute-filepath
+S0001	<path/to>/SRR13222562_gut_microbiota_of_Leptinotarsa_decemlineata_from_China_Xinjiang_Wenquan_County.fastq.gz
+S0002	<path/to>/SRR13222563_gut_microbiota_of_Leptinotarsa_decemlineata_from_China_Xinjiang_Wenquan_County.fastq.gz
 ```
 
-**Reverse-transcribe** the RNA sequences to obtain the corresponding DNA sequences.
-```bash
-qiime rescript reverse-transcribe \
-  --i-rna-sequences silva-138.1-ssu-nr99-rna-seqs.qza \
-  --o-dna-sequences silva-138.1-ssu-nr99-seqs.qza
-```
-
-**Remove low quality sequences**, in this case those with 5 or more degenerated bases 
-and/or containing homopolymers with 8 or more bases)
-```bash
-qiime rescript cull-seqs \
-  --i-sequences silva-138.1-ssu-nr99-seqs.qza \
-  --p-num-degenerates 5 \
-  --p-homopolymer-length 8 \
-  --o-clean-sequences silva-138.1-ssu-nr99-seqs-cleaned.qza \
-  --p-n-jobs $JOBS # number of concurrent processes
-```
-
-#### 2.3.2. Clean the reference taxonomy
-Even if SILVA is a curated database the taxonomic labels can be a bit messy, we will use **R** to clean them a bit.
-
-First we need to **export the taxonomy** in the TSV format (Tab Separated Values), so that **R** can read it.
-```bash
-# export taxonomy to tsv file
-qiime tools export \
-  --input-path silva-138.1-ssu-nr99-tax-cleaned.qza \
-  --output-path exp
-```
-
-Now **open Rstudio or an R terminal** and set the working directory to the same of `$WORKDIR`.
-
-```r
-setwd("<path/to/outputs>")
-```
-
-**Load the required libraries**, install them if they are not already installed. 
-```r
-#install.packages("dplyr")
-library(dplyr)
-#install.packages("stringr")
-library(stringr)
-```
-
-**Read the file** containing the SILVA taxonomy.
-```r
-data <- read.table("exp/taxonomy.tsv", header=T, sep="\t")
-```
-
-**Remove bad species-level ID** that do not correspond to taxon names (i.e. those starting with lowercase) 
-and fill empty genus rank using species-level identifications.
-```r
-CleanData <- data %>%
-  mutate(Taxon = case_when(
-      # Case 1: First letter after "s__" is lowercase
-      str_detect(Taxon, "s__[a-z]") ~ str_replace(Taxon, "s__[a-z].*", "s__"),
-      # Case 2: First letter after "s__" is uppercase
-      str_detect(Taxon, "s__[A-Z]") ~ str_replace(Taxon, 
-                                                  "g__; s__([^_]+)",  # Capture "g__;" and genus portion after "s__"
-                                                  "g__\\1; s__\\1"),  # Append genus after "g__" and keep it after "s__"
-      # Default: Leave other rows unchanged
-      TRUE ~ Taxon
-    )
-  )
-```
-
-**Remove bad genus-level ID** that do not correspond to taxon names (i.e. those starting with lowercase).
-```r
-CleanData2 <- CleanData %>%
-  mutate(
-    Taxon = case_when(
-      # If the first letter after "g__" is lowercase, remove everything after "g__" and keep "s__"
-      str_detect(Taxon, "g__[a-z]") ~ str_replace(Taxon, "g__[a-z].*s__", "g__; s__"),
-      
-      # Otherwise, leave the string as it is
-      TRUE ~ Taxon
-    )
-  )
-```
-
-**Save** the cleaned taxonomy to a TSV file.
-```r
-write.table(CleanData2, "silva-138.1-ssu-nr99-tax-cleaned.tsv", sep="\t", quote = F, row.names = F)
-```
-
-Close Rstudio or the R terminal and **go back to the bash terminal** with the QIIME2 environment
-to import the cleaned SILVA taxonomy as a QIIME2 artifact.
-```bash
-qiime tools import \
-  --type FeatureData[Taxonomy] \
-  --input-path silva-138.1-ssu-nr99-tax-cleaned.tsv \
-  --input-format HeaderlessTSVTaxonomyFormat \
-  --output-path silva-138.1-ssu-nr99-tax-cleaned.qza
-```
-
-
-#### 2.3.3. Filter and dereplicate the reference database
-
-Next we **remove** database entries with **too short SSU sequences** depending on the taxon.
-In this case we use a minimum length threshold of 900 bp for Archaea, 1200 bp for Bacteria and 1400 bp for Eukaryota.
-```bash
-qiime rescript filter-seqs-length-by-taxon \
-  --i-sequences silva-138.1-ssu-nr99-seqs-cleaned.qza \
-  --i-taxonomy silva-138.1-ssu-nr99-tax-cleaned.qza \
-  --p-labels Archaea Bacteria Eukaryota \
-  --p-min-lens 900 1200 1400 \
-  --o-filtered-seqs silva-138.1-ssu-nr99-seqs-filt.qza \
-  --o-discarded-seqs silva-138.1-ssu-nr99-seqs-discard.qza
-```
-
-Next, we **dereplicate entries** with the same taxonomic ID to remove redundance.
-```bash
-qiime rescript dereplicate \
-  --i-sequences silva-138.1-ssu-nr99-seqs-filt.qza \
-  --i-taxa silva-138.1-ssu-nr99-tax-cleaned.qza \
-  --p-mode 'uniq' \
-  --o-dereplicated-sequences silva-138.1-ssu-nr99-seqs-derep-uniq.qza \
-  --o-dereplicated-taxa silva-138.1-ssu-nr99-tax-derep-uniq.qza \
-  --p-threads $JOBS
-```
-
-
-#### 2.3.4. Extract the amplified region from the reference database
-
-To optimize taxonomic classification and reduce database complexity we can **trim the reference sequences**
-to contain only the region actually amplified by the primers used in this study.
-```bash
-qiime feature-classifier extract-reads \
-  --i-sequences silva-138.1-ssu-nr99-seqs-derep-uniq.qza \
-  --p-f-primer ASCYGYGGTAAYWCCAGC \
-  --p-r-primer TCHNHGNATTTCACCNCT \
-  --p-identity 0.8 \
-  --p-min-length 150 \
-  --p-max-length 450 \
-  --p-n-jobs $JOBS \
-  --p-read-orientation forward \
-  --o-reads silva-138.1-ssu-nr99-seqs_Euk575-895.qza
-```
-
-**Dereplicate** again (since some of these shorter sequences may be identical now) to remove redundance.
-```bash
-qiime rescript dereplicate \
-  --i-sequences silva-138.1-ssu-nr99-seqs_Euk575-895.qza \
-  --i-taxa silva-138.1-ssu-nr99-tax-derep-uniq.qza \
-  --p-mode 'uniq' \
-  --o-dereplicated-sequences silva-138.1-ssu-nr99-seqs_Euk575-895_derep-uniq.qza \
-  --o-dereplicated-taxa silva-138.1-ssu-nr99-tax_Euk575-895_derep-uniq.qza \
-  --p-threads $JOBS
-```
-
-
-### 2.4. Import sequences in QIIME2
-We are now ready to import the LUCAS sequences in QIIME2.
-
-#### 2.4.1. Make a manifest file containing paths to raw reads
-We need to create a manifest file telling QIIME2 where to find forward and reverse reads for each sample.
-This is a TSV file with three columns: sample ID, path to forward reads, path to reverse reads.
-First move to the directory containing the fastq files.
-```bash
-cd "$RAWDIR"
-```
-
-Get the **absolute paths to forward and reverse reads** and save it in separate files.
-```bash
-ls -1 "$PWD/"*1.fq.gz > R1.txt # paths to forward reads
-ls -1 "$PWD/"*2.fq.gz > R2.txt # paths to reverse reads
-```
-
-Next we are going to extract **sample names** from the names of the fastq files.
-The file are named following this scheme: "Lucas\<sampleID\>.\<sequencing-direction\>.fq.gz" 
-(e.g., Lucas0001.1.fq.gz, Lucas0001.2.fq.gz, Lucas0002.1.fq.gz, Lucas0002.2.fq.gz, ...).
-So the first 9 characters of the file names correspond to the sample names. 
-Let's use some bash commands to extract sample names. 
-```bash
-# from each fastq file name extract the first 9 characters, sort them, and keep only unique values #
-ls *fq.gz | cut -c 1-9 | sort | uniq > ids.txt
-```
-
-Combine sample names and absolute paths to make a manifest file.
-```bash
-# add column names to the manifest file #
-printf "sample-id\tforward-absolute-filepath\treverse-absolute-filepath\n" > manifest.tsv
-
-# add sample names and paths to the manifest file #
-paste ids.txt R1.txt R2.txt >> manifest.tsv
-
-# remove temporary files #
-rm *.txt
-
-# move the manifest file to the working directory #
-mv manifest.tsv "$WORKDIR"/manifest.tsv
-```
-
-Let's have a look at the content of the manifest file to check that everything is ok.
-
-#### 2.4.2. Import sequences
-First move back to the working directory.
+Import sequences using the manifest file.
 ```bash
 cd $WORKDIR
-```
 
-Now we can use the manifest file to import sequences in QIIME2 with `qiime tools import`. The main parameters of this command are:
-- `--type` specifies the type of qiime2 artifact (QZA) to be created, you can use `qiime tools list-types` to see all the importable types available.
-- `--input-format` specifies the format of the data to be imported, you can use `qiime tools list-formats` to see all the input data format available
-```bash
 qiime tools import \
   --type 'SampleData[PairedEndSequencesWithQuality]' \
   --input-format PairedEndFastqManifestPhred33V2 \
@@ -318,6 +104,42 @@ qiime cutadapt trim-paired \
   --o-trimmed-sequences seqs_trimmed.qza \
   --verbose
 ```
+
+
+
+
+
+
+
+#### 2.3.4. Extract the amplified region from the reference database
+
+To optimize taxonomic classification and reduce database complexity we can **trim the reference sequences**
+to contain only the region actually amplified by the primers used in this study.
+```bash
+qiime feature-classifier extract-reads \
+  --i-sequences silva-138.1-ssu-nr99-seqs-derep-uniq.qza \
+  --p-f-primer ASCYGYGGTAAYWCCAGC \
+  --p-r-primer TCHNHGNATTTCACCNCT \
+  --p-identity 0.8 \
+  --p-min-length 200 \
+  --p-max-length 550 \
+  --p-n-jobs $JOBS \
+  --p-read-orientation forward \
+  --o-reads silva-138.1-ssu-nr99-seqs_Euk575-895.qza
+```
+
+**Dereplicate** again (since some of these shorter sequences may be identical now) to remove redundance.
+```bash
+qiime rescript dereplicate \
+  --i-sequences silva-138.1-ssu-nr99-seqs_Euk575-895.qza \
+  --i-taxa silva-138.1-ssu-nr99-tax-derep-uniq.qza \
+  --p-mode 'uniq' \
+  --o-dereplicated-sequences silva-138.1-ssu-nr99-seqs_Euk575-895_derep-uniq.qza \
+  --o-dereplicated-taxa silva-138.1-ssu-nr99-tax_Euk575-895_derep-uniq.qza \
+  --p-threads $JOBS
+```
+
+
 
 ### 2.5. Denoising and sequence re-orientation
 
