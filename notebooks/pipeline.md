@@ -127,6 +127,7 @@ We are now ready for removing non-biological variation from our data. We use the
 > [!IMPORTANT]
 > The default values of the dada2 parameters are usually good for most applications, but you should experiment with the values of `--p-trunc-len-f` and `--p-trunc-len-r` and compare the results (in terms of model fitting, number of retained sequences per sample and sequences length) to choose the best values. Here an example of how to do it.
 
+- for paired-end sequencing
 ```bash
 # truncation values for forward and reverse reads to be tested
 TruncLenF=(<fw_len_1> <fw_len_2>)
@@ -143,7 +144,7 @@ do
   TLR=${TruncLenR[i]}
     
   qiime dada2 denoise-paired \
-    --i-demultiplexed-seqs approccio_GREZZO/${DIR}/seqs.qza \
+    --i-demultiplexed-seqs seqs.qza \
     --p-trim-left-f $FW_LEN \
     --p-trim-left-r $RV_LEN \
     --p-trunc-len-f $TLF \
@@ -188,6 +189,65 @@ do
 done
 
 ```
+
+- for single-end sequencing
+```bash
+# truncation values to be tested
+TruncLenF=(<len_1> <len_2>)
+
+# for example
+#TruncLenF=(250 250 240 240 230 230 220)
+
+for i in "${!TruncLenF[@]}"
+do
+
+  TLF=${TruncLenF[i]}
+
+  qiime dada2 denoise-single \
+    --i-demultiplexed-seqs seqs.qza \
+    --p-trim-left $FW_LEN \
+    --p-trunc-len $TLF \
+    --p-max-ee-f 2 \
+    --p-max-ee-r 2 \
+    --p-trunc-q 2 \
+    --p-n-reads-learn 1000000 \
+    --p-pooling-method 'pseudo' \
+    --p-n-threads $JOBS \
+    --o-table table_${TLF}.qza \
+    --o-representative-sequences rep-seqs_${TLF}.qza \
+    --o-denoising-stats denoising-stats_${TLF}.qza \
+    --o-base-transition-stats base-transition-stats_${TLF}.qza \
+    --verbose
+
+  # visualize denoising stats
+  qiime metadata tabulate \
+    --m-input-file denoising-stats_${TLF}.qza \
+    --o-visualization denoising-stats_${TLF}.qzv
+
+  # visualize base transition stats
+  qiime dada2 plot-base-transitions \
+    --i-base-transition-stats base-transition-stats_${TLF}.qza \
+    --o-visualization base-transition-stats_${TLF}.qzv
+
+  # Export files for checking them in R
+  tmpdir="tmp_${TLF}"
+  mkdir -p "$tmpdir"
+  
+  qiime tools export --input-path "denoising-stats_${TLF}.qza" --output-path "$tmpdir/exported_stats"
+  cp "${tmpdir}/exported_stats/stats.tsv" "denoising-stats_${TLF}.tsv"
+
+  qiime tools export --input-path "table_${TLF}.qza" --output-path "$tmpdir/exported_table"
+  biom convert -i "$tmpdir/exported_table/feature-table.biom" -o "table_${TLF}.tsv" --to-tsv
+
+  qiime tools export --input-path "rep-seqs_${TLF}.qza" --output-path "$tmpdir/exported_seqs"
+  cp "${tmpdir}/exported_seqs/dna-sequences.fasta" "rep-seqs_${TLF}.fasta"
+
+  rm -r "$tmpdir"
+
+done
+
+```
+
 
 In R you can use this code for checking the dada2 output.
 
@@ -333,12 +393,16 @@ Here some examples of the files produced:
 
 After selecting the best dada2 results chenge their name for simplicity.
 ```bash
+# for paired-end sequencing
 TLF=<selcted_TLF>
 TLR=<selected_TLR>
-
 cp rep-seqs_${TLF}_${TLR}.qza rep_seqs.qza
 cp table_${TLF}_${TLR}.qza table.qza 
 
+# for single-end sequencing
+TLF=<selcted_TLF>
+cp rep-seqs_${TLF}.qza rep_seqs.qza
+cp table_${TLF}.qza table.qza 
 ```
 
 Create visualizations for the ASV table and ASV sequences files.
