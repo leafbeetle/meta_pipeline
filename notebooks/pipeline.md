@@ -282,7 +282,7 @@ names(dat_list) <- sub("^[^_]+_([^\\.]+)\\.tsv$", "\\1",
 df <- bind_rows(dat_list, .id = "source_df")
 df$value<-as.numeric(df$value)
 
-# define comparisons anc columns of interest
+# define comparisons and columns of interest
 my_comparisons<-combn(unique(df$source_df), 2, simplify = FALSE)
 
 ToPlot<-c("percentage.of.input.passed.filter",
