@@ -129,8 +129,12 @@ We are now ready for removing non-biological variation from our data. We use the
 
 ```bash
 # truncation values for forward and reverse reads to be tested
-TruncLenF=(250 250 240 240 230 230 220)
-TruncLenR=(250 240 240 230 230 220 220)
+TruncLenF=(<fw_len_1> <fw_len_2>)
+TruncLenR=(<rv_len_1> <rv_len_2>)
+
+# for example
+#TruncLenF=(250 250 240 240 230 230 220)
+#TruncLenR=(250 240 240 230 230 220 220)
 
 for i in "${!TruncLenF[@]}"
 do
