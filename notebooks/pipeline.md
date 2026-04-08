@@ -58,7 +58,7 @@ multiqc .
 ```
 
 **FastQC** produces one report for each fastq file, **MultiQC** combines those reports in a single one for all samples.
-Look at the multiqc report for checking sequence quality. Here an [example](https://MontagnaLab.github.io/InnovativeApproachesForInvertebrateBiodiversityMonitoring/data/multiqc_report.html).
+Look at the multiqc report for checking sequence quality. Here an [example](https://leafbeetle.github.io/meta_pipeline/examples/multiqc_report.html).
 
 
 ## Import sequences in QIIME2
