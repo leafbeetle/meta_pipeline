@@ -196,7 +196,7 @@ done
 TruncLenF=(<len_1> <len_2>)
 
 # for example
-#TruncLenF=(250 250 240 240 230 230 220)
+#TruncLenF=(250 240 230 220)
 
 for i in "${!TruncLenF[@]}"
 do
