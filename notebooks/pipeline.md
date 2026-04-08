@@ -18,6 +18,7 @@ We start defining some variables so that the pipeline can be applied to differen
 - `ENV` for the name of the conda environment where we installed QIIME2
 - `FW_LEN` for the length of the forward primer
 - `RV_LEN` for the length of the reverse primer
+- `EXT` for the extension used by the fastq files (e.g., fastq.gz, fq.gz, ...)
 
 ```bash
 RAWDIR=<path/to/rawdata/dir>
@@ -31,6 +32,7 @@ ENV=qiime2-amplicon-2026.1
 FW_LEN=<length_of_forward_primer>
 RV_LEN=<length_of_reverse_primer>
 
+EXT=<fastq_file_extension>
 ```
 
 
@@ -44,7 +46,7 @@ cd "$WORKDIR"
 mkdir -p FastQC_output
 
 # run fastQC #
-for file in "$RAWDIR"/*.fq.gz; do
+for file in "$RAWDIR"/*.${EXT}; do
     SAMPLE=$(basename "$file")
     fastqc -t $JOBS -o FastQC_output "$file"
     echo "Processed $SAMPLE"
