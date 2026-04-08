@@ -42,6 +42,7 @@ First of all check the quality of the raw data using the softwares **FastQC** an
 ```bash
 # move to the directory where we want to save the outputs #
 cd "$WORKDIR"
+
 # create a directory for FastQC outputs #
 mkdir -p FastQC_output
 
@@ -63,7 +64,7 @@ Look at the multiqc report for checking sequence quality. Here an [example](http
 
 ## Import sequences in QIIME2
 Make a manifest file named `manifest.tsv` using the SampleID of the metadata file and save it in the working directory `WORKDIR`. 
-It should be a TSV (tab separated values) file with three columns: sample ID, path to forward reads, path to reverse reads.
+It should be a TSV (tab separated values) file with 2/3 columns, the first for the sample IDs and the other(s) for the path(s) to the corresponding fastq file(s).
 Like these examples.
 
 - paired-end reads (e.g., Illumina)
@@ -83,7 +84,7 @@ S0002	<path/to>/SRR13222563_gut_microbiota_of_Leptinotarsa_decemlineata_from_Chi
 
 Import sequences using the manifest file.
 ```bash
-cd $WORKDIR
+cd "$WORKDIR"
 
 conda activate $ENV
 
