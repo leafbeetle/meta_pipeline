@@ -83,6 +83,8 @@ Import sequences using the manifest file.
 ```bash
 cd $WORKDIR
 
+conda activate $ENV
+
 # for paired-end reads
 qiime tools import \
   --type 'SampleData[PairedEndSequencesWithQuality]' \
